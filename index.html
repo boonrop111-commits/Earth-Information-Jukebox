@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Earth Information Jukebox | Listen to Earth Data from NASA Images</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background: #0b1a28;
+      color: #eef4f2;
+      max-width: 880px;
+      margin: 0 auto;
+      padding: 24px 16px 60px;
+      line-height: 1.65;
+    }
+    h1 { margin: 0 0 4px; font-size: 1.8rem; }
+    h2 { font-size: 1.15rem; margin: 0 0 10px; color: #8fe4cb; }
+    .sub { color: #a9b8c4; margin-top: 0; }
+    section {
+      background: #112638;
+      border: 1px solid #26405a;
+      border-radius: 14px;
+      padding: 16px;
+      margin: 16px 0;
+    }
+    .notice {
+      background: #2b2410;
+      border: 1px solid #6b5a22;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 0.92rem;
+      color: #f1e6c6;
+    }
+    label { display: block; margin: 12px 0 4px; font-weight: 600; }
+    select, input[type="file"], input[type="number"] {
+      font-size: 1rem;
+      padding: 8px;
+      width: 100%;
+      box-sizing: border-box;
+      background: #0a1925;
+      color: inherit;
+      border: 1px solid #3a5873;
+      border-radius: 8px;
+    }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .row > div { flex: 1 1 160px; }
+    input[type="range"] { width: 100%; }
+    button {
+      font-size: 1.05rem;
+      padding: 10px 18px;
+      margin: 8px 8px 0 0;
+      cursor: pointer;
+      border-radius: 10px;
+      border: 1px solid #8fe4cb;
+      background: #12384a;
+      color: #eef4f2;
+    }
+    button.primary { background: #8fe4cb; color: #08201a; font-weight: 700; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button:focus-visible, select:focus-visible, input:focus-visible {
+      outline: 3px solid #d3ef98;
+      outline-offset: 2px;
+    }
+    canvas { display: block; width: 100%; height: auto; border-radius: 8px; background: #050d14; margin-top: 10px; }
+    #barCanvas { cursor: crosshair; }
+    #chart { height: 130px; }
+    .status {
+      margin: 10px 0 0;
+      padding: 8px 10px;
+      background: #0a1925;
+      border-radius: 8px;
+      min-height: 1.6em;
+      font-size: 0.95rem;
+    }
+    .small { font-size: 0.85rem; color: #a9b8c4; }
+    .step-box {
+      border-left: 4px solid #8fe4cb;
+      padding: 6px 12px;
+      margin: 10px 0;
+      background: #0d2031;
+      font-size: 0.95rem;
+    }
+    a { color: #8fe4cb; }
+  </style>
+</head>
+<body>
+  <h1>Earth Information Jukebox</h1>
+  <p class="sub">Listen to Earth data from NASA images: convert image colors into values, then turn those values into sound.</p>
+
+  <p class="notice">
+    <strong>Please note:</strong> The results are <strong>estimates based on image colors</strong> matched against NASA color bars, not raw satellite data.
+    The ocean image comes from the ECCO2 model, not direct measurements. Forest data comes from the GEDI instrument aboard the International Space Station.
+  </p>
+
+  <section aria-labelledby="h-set">
+    <h2 id="h-set">① Choose a dataset</h2>
+    <label for="dataset">Dataset</label>
+    <select id="dataset">
+      <option value="gedi">Global forest height (GEDI)</option>
+      <option value="sst">Sea surface temperature (ECCO2)</option>
+    </select>
+    <div class="row">
+      <div>
+        <label for="minVal">Color scale minimum</label>
+        <input id="minVal" type="number" step="any" value="0">
+      </div>
+      <div>
+        <label for="maxVal">Color scale maximum</label>
+        <input id="maxVal" type="number" step="any" value="50">
+      </div>
+    </div>
+    <p class="small" id="unitNote"></p>
+  </section>
+
+  <section aria-labelledby="h-data">
+    <h2 id="h-data">② Load the data image</h2>
+    <button id="loadDataBtn" type="button" class="primary">Load data image from NASA</button>
+    <label for="dataFile">Or choose an image file from your device (use if loading from NASA fails)</label>
+    <input id="dataFile" type="file" accept="image/*">
+    <p class="small">Save the image (right-click it and select “Save image as”): <a id="dataLink" href="#" target="_blank" rel="noopener noreferrer">Open data image</a></p>
+    <p class="status" id="dataStatus" role="status" aria-live="polite">No data image loaded</p>
+    <canvas id="imageCanvas" role="img" aria-label="NASA data image with the scan line highlighted"></canvas>
+    <p class="small" id="credit"></p>
+  </section>
+
+  <section aria-labelledby="h-cal">
+    <h2 id="h-cal">③ Calibrate colors against the NASA color bar (recommended, about 1 minute)</h2>
+    <div class="step-box">
+      How to: Load the color bar image → click the <strong>minimum-value end</strong> once → click the <strong>maximum-value end</strong> once.
+      The program will sample colors along the line you clicked.
+    </div>
+    <button id="loadBarBtn" type="button" class="primary">Load color bar from NASA</button>
+    <label for="barFile">Or choose a color bar image file from your device</label>
+    <input id="barFile" type="file" accept="image/*">
+    <p class="small">Save the image: <a id="barLink" href="#" target="_blank" rel="noopener noreferrer">Open color bar</a></p>
+    <p class="status" id="barStatus" role="status" aria-live="polite">No color bar loaded (using approximate default colors)</p>
+    <canvas id="barCanvas" role="img" aria-label="NASA color bar image; click to calibrate colors"></canvas>
+    <button id="resetCalBtn" type="button">Clear calibration (use approximate colors)</button>
+  </section>
+
+  <section aria-labelledby="h-scan">
+    <h2 id="h-scan">④ Choose a scan line</h2>
+    <label for="linePos">Horizontal position in the image <span id="linePosText">50%</span> (0% = top · 100% = bottom)</label>
+    <input id="linePos" type="range" min="5" max="95" step="1" value="50">
+    <p class="small">Colors are sampled from left to right along this line and converted into sound, one segment at a time.</p>
+  </section>
+
+  <section aria-labelledby="h-play">
+    <h2 id="h-play">⑤ Listen</h2>
+    <canvas id="chart" role="img" aria-label="Chart of values sampled along the scan line"></canvas>
+    <p class="status" id="summary" role="status">Waiting for data</p>
+
+    <div>
+      <button id="playBtn" type="button" class="primary" disabled>▶ Play scan line</button>
+      <button id="stopBtn" type="button">■ Stop</button>
+      <button id="refBtn" type="button">♪ Play reference tones (minimum → maximum)</button>
+    </div>
+
+    <label for="speed">Speed: <span id="speedText">Normal</span></label>
+    <input id="speed" type="range" min="60" max="400" step="10" value="160">
+
+    <label for="volume">Volume: <span id="volumeText">20%</span></label>
+    <input id="volume" type="range" min="0" max="50" step="1" value="20">
+
+    <label for="tone">Tone type</label>
+    <select id="tone">
+      <option value="sine">Soft (Sine)</option>
+      <option value="triangle">Bright (Triangle)</option>
+      <option value="sawtooth">Sharp (Sawtooth)</option>
+    </select>
+
+    <p class="status" id="playStatus" role="status" aria-live="polite">Ready when an image is loaded</p>
+  </section>
+
+  <script>
+    // ===== การตั้งค่าชุดข้อมูล =====
+    // stops = ค่าสีเริ่มต้นโดยประมาณ (ใช้เมื่อยังไม่ได้ปรับเทียบกับแถบสี)
+    const DATASETS = {
+      gedi: {
+        label: "Forest height",
+        unit: "m",
+        min: 0,
+        max: 50,
+        mode: "rgb",
+        dataUrl: "https://svs.gsfc.nasa.gov/vis/a000000/a004900/a004950/GEDI_global.0900_print.jpg",
+        barUrl: "https://svs.gsfc.nasa.gov/vis/a000000/a004900/a004950/GEDI_colorbar_0to50_01_print.jpg",
+        credit: "Image: NASA Scientific Visualization Studio, SVS 4950 (GEDI Forest Height)",
+        note: "Set the minimum and maximum to match the values at the ends of the image color bar (NASA provides 0–40, 0–50, and 0–75 m scales).",
+        stops: [
+          [0,  [120, 80, 40]],
+          [10, [20, 80, 30]],
+          [25, [60, 170, 60]],
+          [40, [150, 230, 100]],
+          [50, [255, 255, 255]]
+        ]
+      },
+      sst: {
+        label: "Sea surface temperature",
+        unit: "°C",
+        min: 0,
+        max: 32,
+        mode: "chroma",
+        dataUrl: "https://svs.gsfc.nasa.gov/vis/a000000/a003900/a003912/flat_global_ecco2_2028x1024.25000.jpg",
+        barUrl: "https://svs.gsfc.nasa.gov/vis/a000000/a003900/a003912/sst_ecco2_cbar.png",
+        credit: "Image: NASA Scientific Visualization Studio, SVS 3912 (ECCO2 model data, NASA/JPL and MIT)",
+        note: "NASA indicates that blue is approximately 0°C and red is approximately 32°C.",
+        stops: [
+          [0,  [20, 40, 200]],
+          [10, [30, 170, 150]],
+          [15, [40, 190, 60]],
+          [20, [150, 210, 40]],
+          [25, [240, 220, 40]],
+          [32, [220, 30, 30]]
+        ]
+      }
+    };
+
+    const STEPS = 64;   // จำนวนช่วงเสียงตลอดภาพ
+    const BAND = 0.03;  // ความหนาของแนวสแกน (±3% ของความสูงภาพ)
+
+    const $ = (id) => document.getElementById(id);
+    const datasetEl = $("dataset");
+    const minInput = $("minVal");
+    const maxInput = $("maxVal");
+    const unitNote = $("unitNote");
+    const loadDataBtn = $("loadDataBtn");
+    const dataFile = $("dataFile");
+    const dataLink = $("dataLink");
+    const dataStatus = $("dataStatus");
+    const imageCanvas = $("imageCanvas");
+    const imageCtx = imageCanvas.getContext("2d");
+    const creditEl = $("credit");
+    const loadBarBtn = $("loadBarBtn");
+    const barFile = $("barFile");
+    const barLink = $("barLink");
+    const barStatus = $("barStatus");
+    const barCanvas = $("barCanvas");
+    const barCtx = barCanvas.getContext("2d");
+    const resetCalBtn = $("resetCalBtn");
+    const linePos = $("linePos");
+    const linePosText = $("linePosText");
+    const chart = $("chart");
+    const chartCtx = chart.getContext("2d");
+    const summaryEl = $("summary");
+    const playBtn = $("playBtn");
+    const stopBtn = $("stopBtn");
+    const refBtn = $("refBtn");
+    const speedEl = $("speed");
+    const speedText = $("speedText");
+    const volumeEl = $("volume");
+    const volumeText = $("volumeText");
+    const toneEl = $("tone");
+    const playStatus = $("playStatus");
+
+    // ภาพต้นฉบับที่สะอาด (ไม่มีเส้นหรือจุดทับ) เก็บไว้อ่านสี
+    const srcCanvas = document.createElement("canvas");
+    const srcCtx = srcCanvas.getContext("2d", { willReadFrequently: true });
+    const barSrc = document.createElement("canvas");
+    const barSrcCtx = barSrc.getContext("2d", { willReadFrequently: true });
+
+    let hasData = false;
+    let hasBar = false;
+    let clicks = [];      // จุดที่คลิกบนแถบสี (สูงสุด 2 จุด)
+    let lut = [];         // ตารางจับคู่สี → ค่า
+    let values = [];      // ค่าที่อ่านได้ในแต่ละช่วงของแนวสแกน
+    let audioCtx = null;
+    let masterGain = null;
+    let timer = null;
+    let token = 0;
+    let currentIndex = -1;
+
+    // ===== ช่วยเหลือทั่วไป =====
+    function currentDs() { return DATASETS[datasetEl.value]; }
+
+    function getRange() {
+      const ds = currentDs();
+      let lo = Number(minInput.value);
+      let hi = Number(maxInput.value);
+      if (!Number.isFinite(lo)) lo = ds.min;
+      if (!Number.isFinite(hi) || hi <= lo) hi = lo + 1;
+      return { lo, hi };
+    }
+
+    async function toBitmap(source) {
+      if (typeof source === "string") {
+        const response = await fetch(source, { mode: "cors" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return createImageBitmap(await response.blob());
+      }
+      return createImageBitmap(source);
+    }
+
+    function paintBitmap(bitmap, srcC, srcX, viewC) {
+      const scale = Math.min(1, 1024 / bitmap.width);
+      const w = Math.max(1, Math.round(bitmap.width * scale));
+      const h = Math.max(1, Math.round(bitmap.height * scale));
+      srcC.width = w; srcC.height = h;
+      srcX.clearRect(0, 0, w, h);
+      srcX.drawImage(bitmap, 0, 0, w, h);
+      viewC.width = w; viewC.height = h;
+    }
+
+    // ===== การจับคู่สี =====
+    function prepColor(r, g, b, mode) {
+      if (mode === "chroma") {
+        // ไม่สนความสว่าง ดูเฉพาะ "เฉดสี" (เหมาะกับเส้นกระแสน้ำบนพื้นดำ)
+        const mx = Math.max(r, g, b);
+        const mn = Math.min(r, g, b);
+        if (mx < 60 || (mx - mn) / mx < 0.25) return null;
+        const k = 255 / mx;
+        return [r * k, g * k, b * k];
+      }
+      if (r + g + b < 90) return null; // พื้นหลังสีดำ
+      return [r, g, b];
+    }
+
+    function finalizeLut(raw) {
+      const mode = currentDs().mode;
+      lut = [];
+      raw.forEach((e) => {
+        const c = prepColor(e.r, e.g, e.b, mode);
+        if (c) lut.push({ v: e.v, r: c[0], g: c[1], b: c[2] });
+      });
+    }
+
+    function buildDefaultLut() {
+      const ds = currentDs();
+      const { lo, hi } = getRange();
+      const raw = [];
+      const count = 128;
+      for (let i = 0; i < count; i += 1) {
+        const v = lo + ((hi - lo) * i) / (count - 1);
+        const orig = ds.min + ((v - lo) / (hi - lo)) * (ds.max - ds.min); // เทียบกลับไปช่วงเดิมของค่าสีเริ่มต้น
+        let k = 0;
+        while (k < ds.stops.length - 2 && orig > ds.stops[k + 1][0]) k += 1;
+        const [v0, c0] = ds.stops[k];
+        const [v1, c1] = ds.stops[k + 1];
+        const t = Math.min(1, Math.max(0, (orig - v0) / (v1 - v0)));
+        raw.push({
+          v,
+          r: c0[0] + (c1[0] - c0[0]) * t,
+          g: c0[1] + (c1[1] - c0[1]) * t,
+          b: c0[2] + (c1[2] - c0[2]) * t
+        });
+      }
+      finalizeLut(raw);
+    }
+
+    function buildCalibratedLut() {
+      const { lo, hi } = getRange();
+      const w = barSrc.width;
+      const h = barSrc.height;
+      const data = barSrcCtx.getImageData(0, 0, w, h).data;
+      const [p0, p1] = clicks;
+      const raw = [];
+      const count = 128;
+      for (let i = 0; i < count; i += 1) {
+        const t = i / (count - 1);
+        const cx = Math.round(p0.x + (p1.x - p0.x) * t);
+        const cy = Math.round(p0.y + (p1.y - p0.y) * t);
+        let r = 0, g = 0, b = 0, n = 0;
+        for (let dy = -1; dy <= 1; dy += 1) {
+          for (let dx = -1; dx <= 1; dx += 1) {
+            const x = Math.min(w - 1, Math.max(0, cx + dx));
+            const y = Math.min(h - 1, Math.max(0, cy + dy));
+            const o = (y * w + x) * 4;
+            r += data[o]; g += data[o + 1]; b += data[o + 2]; n += 1;
+          }
+        }
+        raw.push({ v: lo + (hi - lo) * t, r: r / n, g: g / n, b: b / n });
+      }
+      finalizeLut(raw);
+    }
+
+    function rebuildLut() {
+      if (clicks.length === 2 && hasBar) {
+        buildCalibratedLut();
+        barStatus.textContent =
+          `Calibrated: first end = ${getRange().lo}, second end = ${getRange().hi} ${currentDs().unit} (click again if the ends are reversed)`;
+      } else {
+        buildDefaultLut();
+      }
+    }
+
+    function colorToValue(r, g, b) {
+      const c = prepColor(r, g, b, currentDs().mode);
+      if (!c) return null;
+      const limit = currentDs().mode === "chroma" ? 90 * 90 : 80 * 80;
+      let best = null;
+      let bestDist = Infinity;
+      for (const e of lut) {
+        const dr = c[0] - e.r;
+        const dg = c[1] - e.g;
+        const db = c[2] - e.b;
+        const d = dr * dr + dg * dg + db * db;
+        if (d < bestDist) { bestDist = d; best = e.v; }
+      }
+      return bestDist <= limit ? best : null;
+    }
+
+    // ===== โหลดภาพ =====
+    async function loadData(source, label) {
+      stopPlayback("Playback stopped");
+      dataStatus.textContent = "Loading data image...";
+      try {
+        const bitmap = await toBitmap(source);
+        paintBitmap(bitmap, srcCanvas, srcCtx, imageCanvas);
+        hasData = true;
+        dataStatus.textContent = `Data image loaded successfully (${label}), ${srcCanvas.width}x${srcCanvas.height} pixels`;
+        refresh();
+      } catch (error) {
+        console.error(error);
+        dataStatus.textContent =
+          `Could not load data image: ${error.message} — save the image from the link above, then use the “Choose an image file” field.`;
+      }
+    }
+
+    async function loadBar(source, label) {
+      barStatus.textContent = "Loading color bar...";
+      try {
+        const bitmap = await toBitmap(source);
+        paintBitmap(bitmap, barSrc, barSrcCtx, barCanvas);
+        hasBar = true;
+        clicks = [];
+        rebuildLut();
+        drawBar();
+        barStatus.textContent =
+          `Color bar loaded successfully (${label}) — click the minimum-value end, then the maximum-value end.`;
+        refresh();
+      } catch (error) {
+        console.error(error);
+        barStatus.textContent =
+          `Could not load color bar: ${error.message} — save the image from the link above, then use the “Choose a color bar image file” field.`;
+      }
+    }
+
+    function drawBar() {
+      if (!hasBar) return;
+      const w = barCanvas.width;
+      const h = barCanvas.height;
+      barCtx.clearRect(0, 0, w, h);
+      barCtx.drawImage(barSrc, 0, 0);
+      const r = Math.max(6, w / 120);
+      barCtx.lineWidth = Math.max(2, w / 400);
+      if (clicks.length === 2) {
+        barCtx.strokeStyle = "#ffe066";
+        barCtx.beginPath();
+        barCtx.moveTo(clicks[0].x, clicks[0].y);
+        barCtx.lineTo(clicks[1].x, clicks[1].y);
+        barCtx.stroke();
+      }
+      clicks.forEach((p, i) => {
+        barCtx.fillStyle = i === 0 ? "#ff4d4d" : "#4da3ff";
+        barCtx.strokeStyle = "#ffffff";
+        barCtx.beginPath();
+        barCtx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        barCtx.fill();
+        barCtx.stroke();
+      });
+    }
+
+    // ===== วิเคราะห์ภาพตามแนวสแกน =====
+    function analyze() {
+      const w = srcCanvas.width;
+      const h = srcCanvas.height;
+      const center = Math.round((h * Number(linePos.value)) / 100);
+      const half = Math.max(2, Math.round(h * BAND));
+      const y0 = Math.max(0, center - half);
+      const y1 = Math.min(h - 1, center + half);
+      const rows = y1 - y0 + 1;
+      const pixels = srcCtx.getImageData(0, y0, w, rows).data;
+
+      values = [];
+      for (let s = 0; s < STEPS; s += 1) {
+        const xStart = Math.floor((s * w) / STEPS);
+        const xEnd = Math.max(xStart + 1, Math.floor(((s + 1) * w) / STEPS));
+        let total = 0;
+        let count = 0;
+        for (let y = 0; y < rows; y += 1) {
+          for (let x = xStart; x < xEnd; x += 1) {
+            const o = (y * w + x) * 4;
+            if (pixels[o + 3] < 128) continue;
+            const v = colorToValue(pixels[o], pixels[o + 1], pixels[o + 2]);
+            if (v !== null) { total += v; count += 1; }
+          }
+        }
+        values.push(count >= 3 ? total / count : null);
+      }
+    }
+
+    // ===== วาดภาพและกราฟ =====
+    function drawImageWithFrame() {
+      const w = imageCanvas.width;
+      const h = imageCanvas.height;
+      imageCtx.clearRect(0, 0, w, h);
+      imageCtx.drawImage(srcCanvas, 0, 0);
+      const center = (h * Number(linePos.value)) / 100;
+      const half = Math.max(2, h * BAND);
+      imageCtx.strokeStyle = "#ffe066";
+      imageCtx.lineWidth = Math.max(2, w / 400);
+      imageCtx.strokeRect(1, center - half, w - 2, half * 2);
+    }
+
+    function drawChart(highlight = -1) {
+      const { lo, hi } = getRange();
+      const rect = chart.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const w = Math.max(1, Math.round(rect.width * dpr));
+      const h = Math.max(1, Math.round(rect.height * dpr));
+      if (chart.width !== w || chart.height !== h) { chart.width = w; chart.height = h; }
+      chartCtx.clearRect(0, 0, w, h);
+      if (!values.length) return;
+
+      const gap = Math.max(1, Math.round(w * 0.004));
+      const barW = (w - gap * (STEPS + 1)) / STEPS;
+      values.forEach((v, i) => {
+        const x = gap + i * (barW + gap);
+        if (v === null) {
+          chartCtx.fillStyle = "#33485a";
+          chartCtx.fillRect(x, h - 4 * dpr, barW, 4 * dpr);
+          return;
+        }
+        const norm = Math.min(1, Math.max(0, (v - lo) / (hi - lo)));
+        const barH = Math.max(3 * dpr, norm * (h - 8 * dpr));
+        chartCtx.fillStyle = i === highlight ? "#ffe066" : "#8fe4cb";
+        chartCtx.fillRect(x, h - barH, barW, barH);
+      });
+    }
+
+    function updateSummary() {
+      const ds = currentDs();
+      const valid = values.filter((v) => v !== null);
+      if (!valid.length) {
+        summaryEl.textContent =
+          "No colors matched the color bar along this scan line. Try moving the scan line, calibrating against the color bar, or choosing another image.";
+        playBtn.disabled = true;
+        return;
+      }
+      const min = Math.min(...valid);
+      const max = Math.max(...valid);
+      const avg = valid.reduce((a, b) => a + b, 0) / valid.length;
+      const how = clicks.length === 2 ? "calibrated against the color bar" : "using approximate default colors (not calibrated)";
+      summaryEl.textContent =
+        `${ds.label} along scan line: min ${min.toFixed(1)} · max ${max.toFixed(1)} · average ${avg.toFixed(1)} ${ds.unit} · ` +
+        `${valid.length} of ${STEPS} segments have data · ${how}`;
+      playBtn.disabled = false;
+    }
+
+    function refresh() {
+      if (!hasData) return;
+      analyze();
+      drawImageWithFrame();
+      drawChart();
+      updateSummary();
+    }
+
+    // ===== เสียง =====
+    async function prepareAudio() {
+      const Ctor = window.AudioContext || window.webkitAudioContext;
+      if (!Ctor) throw new Error("เบราว์เซอร์นี้ไม่รองรับ Web Audio");
+      if (!audioCtx) {
+        audioCtx = new Ctor();
+        masterGain = audioCtx.createGain();
+        masterGain.gain.value = Number(volumeEl.value) / 100;
+        masterGain.connect(audioCtx.destination);
+      }
+      if (audioCtx.state === "suspended") await audioCtx.resume();
+    }
+
+    function valueToFrequency(v) {
+      const { lo, hi } = getRange();
+      const norm = Math.min(1, Math.max(0, (v - lo) / (hi - lo)));
+      return 220 * Math.pow(2, norm * 2); // 2 อ็อกเทฟ: 220–880 Hz
+    }
+
+    function playNote(v, durationSec) {
+      const now = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const env = audioCtx.createGain();
+      osc.type = toneEl.value;
+      osc.frequency.value = valueToFrequency(v);
+      env.gain.setValueAtTime(0.0001, now);
+      env.gain.exponentialRampToValueAtTime(0.8, now + 0.02);
+      env.gain.exponentialRampToValueAtTime(0.0001, now + durationSec);
+      osc.connect(env);
+      env.connect(masterGain);
+      osc.onended = () => { osc.disconnect(); env.disconnect(); };
+      osc.start(now);
+      osc.stop(now + durationSec + 0.02);
+    }
+
+    function stopPlayback(message) {
+      token += 1;
+      if (timer !== null) { clearTimeout(timer); timer = null; }
+      currentIndex = -1;
+      playBtn.textContent = "▶ Play scan line";
+      playBtn.disabled = !values.some((v) => v !== null);
+      drawChart();
+      if (message) playStatus.textContent = message;
+    }
+
+    function playStep(myToken) {
+      if (myToken !== token) return;
+      const ds = currentDs();
+      if (currentIndex + 1 >= values.length) {
+        stopPlayback("Playback complete — press Play to listen again");
+        return;
+      }
+      currentIndex += 1;
+      const v = values[currentIndex];
+      const stepMs = Number(speedEl.value);
+      const percent = Math.round((currentIndex / (STEPS - 1)) * 100);
+      if (v === null) {
+        playStatus.textContent = `Segment ${currentIndex + 1} of ${STEPS} (${percent}% from the left): no data`;
+      } else {
+        playNote(v, Math.max(0.06, (stepMs / 1000) * 0.8));
+        playStatus.textContent =
+          `Segment ${currentIndex + 1} of ${STEPS} (${percent}% from the left): approximately ${v.toFixed(1)} ${ds.unit}`;
+      }
+      drawChart(currentIndex);
+      timer = setTimeout(() => playStep(myToken), stepMs);
+    }
+
+    async function startPlayback() {
+      stopPlayback();
+      try {
+        await prepareAudio();
+        token += 1;
+        const myToken = token;
+        currentIndex = -1;
+        playBtn.disabled = true;
+        playBtn.textContent = "♫ Playing...";
+        playStep(myToken);
+      } catch (error) {
+        stopPlayback(`Could not start audio: ${error.message}`);
+      }
+    }
+
+    async function playReference() {
+      stopPlayback();
+      const { lo, hi } = getRange();
+      const unit = currentDs().unit;
+      try {
+        await prepareAudio();
+        playNote(lo, 0.6);
+        playStatus.textContent = `Low tone = ${lo} ${unit} (scale minimum)`;
+        const myToken = token;
+        setTimeout(() => {
+          if (myToken !== token) return;
+          playNote(hi, 0.6);
+          playStatus.textContent = `High tone = ${hi} ${unit} (scale maximum)`;
+        }, 900);
+      } catch (error) {
+        playStatus.textContent = `Could not start audio: ${error.message}`;
+      }
+    }
+
+    // ===== เปลี่ยนชุดข้อมูล =====
+    function applyDataset() {
+      const ds = currentDs();
+      stopPlayback();
+      hasData = false;
+      hasBar = false;
+      clicks = [];
+      values = [];
+      minInput.value = ds.min;
+      maxInput.value = ds.max;
+      unitNote.textContent = `Unit: ${ds.unit} · ${ds.note}`;
+      dataLink.href = ds.dataUrl;
+      barLink.href = ds.barUrl;
+      creditEl.textContent = ds.credit;
+      imageCtx.clearRect(0, 0, imageCanvas.width, imageCanvas.height);
+      barCtx.clearRect(0, 0, barCanvas.width, barCanvas.height);
+      dataStatus.textContent = "No data image loaded";
+      barStatus.textContent = "No color bar loaded (using approximate default colors)";
+      summaryEl.textContent = "Waiting for data";
+      playBtn.disabled = true;
+      buildDefaultLut();
+      drawChart();
+    }
+
+    // ===== ผูกปุ่มและตัวปรับ =====
+    datasetEl.addEventListener("change", applyDataset);
+
+    loadDataBtn.addEventListener("click", async () => {
+      loadDataBtn.disabled = true;
+      await loadData(currentDs().dataUrl, "from NASA");
+      loadDataBtn.disabled = false;
+    });
+    dataFile.addEventListener("change", () => {
+      if (dataFile.files && dataFile.files[0]) loadData(dataFile.files[0], dataFile.files[0].name);
+    });
+
+    loadBarBtn.addEventListener("click", async () => {
+      loadBarBtn.disabled = true;
+      await loadBar(currentDs().barUrl, "from NASA");
+      loadBarBtn.disabled = false;
+    });
+    barFile.addEventListener("change", () => {
+      if (barFile.files && barFile.files[0]) loadBar(barFile.files[0], barFile.files[0].name);
+    });
+
+    barCanvas.addEventListener("click", (event) => {
+      if (!hasBar) return;
+      const rect = barCanvas.getBoundingClientRect();
+      const x = ((event.clientX - rect.left) * barCanvas.width) / rect.width;
+      const y = ((event.clientY - rect.top) * barCanvas.height) / rect.height;
+      if (clicks.length >= 2) clicks = [];
+      clicks.push({ x, y });
+      if (clicks.length === 1) {
+        barStatus.textContent = "First point selected (red = minimum) — now click the maximum-value end of the color bar.";
+      }
+      stopPlayback();
+      rebuildLut();
+      drawBar();
+      refresh();
+    });
+
+    resetCalBtn.addEventListener("click", () => {
+      clicks = [];
+      stopPlayback();
+      buildDefaultLut();
+      drawBar();
+      barStatus.textContent = "Calibration cleared (using approximate default colors)";
+      refresh();
+    });
+
+    function onRangeChange() {
+      stopPlayback();
+      rebuildLut();
+      refresh();
+      drawChart();
+    }
+    minInput.addEventListener("change", onRangeChange);
+    maxInput.addEventListener("change", onRangeChange);
+
+    linePos.addEventListener("input", () => {
+      linePosText.textContent = `${linePos.value}%`;
+      stopPlayback();
+      refresh();
+    });
+    playBtn.addEventListener("click", startPlayback);
+    stopBtn.addEventListener("click", () => stopPlayback("หยุดเสียงแล้ว"));
+    refBtn.addEventListener("click", playReference);
+    speedEl.addEventListener("input", () => {
+      const s = Number(speedEl.value);
+      speedText.textContent = s < 110 ? "Fast" : s > 250 ? "Slow" : "Normal";
+    });
+    volumeEl.addEventListener("input", () => {
+      const v = Number(volumeEl.value);
+      volumeText.textContent = `${v}%`;
+      if (masterGain && audioCtx) masterGain.gain.setTargetAtTime(v / 100, audioCtx.currentTime, 0.04);
+    });
+    window.addEventListener("resize", () => drawChart(currentIndex));
+
+    applyDataset();
+  </script>
+</body>
+</html>
